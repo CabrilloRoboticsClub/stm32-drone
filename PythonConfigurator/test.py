@@ -1,45 +1,37 @@
 import serial
-import pygame
+import glfw
 from OpenGL.GL import *
-from OpenGL.GLUT import *
 from OpenGL.GLU import *
 import threading
 import time
 
-pygame.init()
+# Initialize GLFW
+glfw.init()
 
-width, height = 1200,1000
-screen = pygame.display.set_mode((width, height), pygame.DOUBLEBUF | pygame.OPENGL)
+width, height = 1200, 1000
+window = glfw.create_window(width, height, "3D Cube", None, None)
+glfw.make_context_current(window)
 
 # Set up the perspective
 gluPerspective(45, (width / height), 0.1, 50.0)
 glTranslatef(0.0, 0.0, -5)
-glEnable(GL_DEPTH_TEST)
+glEnable(GL_DEPTH_TEST)  # Enable depth testing to make the cube solid
 
-vertices=( (1, -1, -1),
+vertices = (
+    (1, -1, -1),
     (1, 1, -1),
     (-1, 1, -1),
     (-1, -1, -1),
     (1, -1, 1),
     (1, 1, 1),
     (-1, -1, 1),
-    (-1, 1, 1))
+    (-1, 1, 1)
+)
 
 edges = (
-    (0,1),
-    (0,3),
-    (0,4),
-    (2,1),
-    (2,3),
-    (2,7),
-    (6,3),
-    (6,4),
-    (6,7),
-    (5,1),
-    (5,4),
-    (5,7)
-    )
-
+    (0, 1), (0, 3), (0, 4), (2, 1), (2, 3), (2, 7),
+    (6, 3), (6, 4), (6, 7), (5, 1), (5, 4), (5, 7)
+)
 
 faces = (
     (0, 1, 2, 3),  # Back
@@ -59,6 +51,8 @@ colors = (
     (0, 1, 1)   # Cyan
 )
 
+new_yaw, new_pitch, new_roll = 0.0, 0.0, 0.0
+
 def draw_cube():
     glBegin(GL_QUADS)
     for i, face in enumerate(faces):
@@ -67,19 +61,16 @@ def draw_cube():
             glVertex3fv(vertices[vertex])
     glEnd()
 
-    # Draw edges for better visibility
-    glColor3f(1, 1, 1)  # Set edge color to white
+    glColor3f(1, 1, 1)  # White edges
     glBegin(GL_LINES)
     for edge in edges:
         for vertex in edge:
             glVertex3fv(vertices[vertex])
     glEnd()
 
-    
-new_yaw, new_pitch, new_roll = 0.0, 0.0, 0.0
-
 def read_serial(stop_event):
     global new_yaw, new_pitch, new_roll
+    ser = serial.Serial("COM5", 115200)
     while not stop_event.is_set():
         if ser.in_waiting > 0:
             data = ser.readline().decode("utf-8").strip().split()
@@ -88,61 +79,38 @@ def read_serial(stop_event):
                 new_yaw = float(data[2])
                 new_pitch = float(data[3])
                 new_roll = float(data[4])
-                
             except ValueError:
                 print("Invalid data received, skipping...")
 
-ser = serial.Serial(
-    "COM5", 115200 
-)
-
-# Event to control when to stop the threads
 stop_event = threading.Event()
-
-# Create a thread for serial reading
 thread1 = threading.Thread(target=read_serial, args=(stop_event,))
-
-# Start the serial reading thread
 thread1.start()
 
-
-yaw, pitch, roll = 0.0,0.0,0.0
-
+yaw, pitch, roll = 0.0, 0.0, 0.0
+offset_yaw, offset_pitch, offset_roll = 0.0, 0.0, 0.0
 
 def render():
-    global yaw, pitch, roll, new_yaw, new_pitch, new_roll
-    setup = True
-    while not stop_event.is_set():
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                stop_event.set()
-
-        # Clear the screen
+    global new_yaw, new_pitch, new_roll
+    while not glfw.window_should_close(window):
+        glfw.poll_events()
+        
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
-        # Rotate the cube based on the new values
-        offset_yaw = yaw - new_yaw
-        yaw = new_yaw
-        offset_pitch = pitch - new_pitch
-        pitch = new_pitch
-        offset_roll = roll - new_roll
-        roll = new_roll
-        # print(new_pitch, new_roll, new_yaw)
-
-        glRotatef(offset_roll, 1, 0, 0)
-        glRotatef(-offset_yaw, 0, 1, 0)
-        glRotatef(-offset_pitch, 0, 0, 1)
+        glLoadIdentity()  # Reset transformations
+        
+        glTranslatef(0.0, 0.0, -5)  # Move the camera back
+        
+        # Apply absolute rotations
+        glRotatef(new_roll, 1, 0, 0)
+        glRotatef(-new_yaw, 0, 1, 0)
+        glRotatef(-new_pitch, 0, 0, 1)
 
         draw_cube()
+        
+        glfw.swap_buffers(window)
+        time.sleep(0.016)  # ~60 FPS
 
-        # Update the display
-        pygame.display.flip()
-
-        # Limit the frame rate (e.g., 60 FPS)
-        pygame.time.wait(16)
-
-    pygame.quit()
+    stop_event.set()
+    thread1.join()
+    glfw.terminate()
 
 render()
-
-thread1.join()
