@@ -1,97 +1,75 @@
-// #define TEST_PIN 23
-
-// void setup() {
-//   pinMode(TEST_PIN, OUTPUT); // Set pin TEST_PIN as an output
-// }
-
-// void loop() {
-//   digitalWrite(TEST_PIN, HIGH); // Turn the LED on
-//   delay(100);            // Wait for 1 second
-//   digitalWrite(TEST_PIN, LOW);  // Turn the LED off
-// //   delay(100);            // Wait for 1 second
-// // }
-// #include <Servo.h>
-
-// Servo esc;  // Create a Servo object to control the ESC
-
-// void setup() {
-//   esc.attach(23);  // Attach the ESC to pin 23 (PWM-capable pin)
-//   Serial.begin(9600);  // Start serial communication at 9600 baud rate
-//   delay(2000);  // Wait for ESC to initialize
-  
-//   // You can calibrate the ESC if needed
-//   esc.writeMicroseconds(1000);  // Minimum throttle (1ms pulse)
-//   delay(3000);
-//   esc.writeMicroseconds(2000);  // Maximum throttle (2ms pulse)
-//   delay(3000);
-
-//   esc.writeMicroseconds(1000);  // Neutral throttle (1.5ms pulse)
-//   delay(3000);
-//   Serial.println("ESC initialized. Send values between 1000 and 2000 for throttle control.");
-// }
-
-// void loop() {
-//   if (Serial.available() > 0) {  // Check if data is available to read from serial
-//     int value = Serial.parseInt();  // Read the integer from serial input
-//     if (value >= 1000 && value <= 2000) {  // Ensure the value is within the valid range
-//       esc.writeMicroseconds(value);  // Set the ESC throttle
-//       Serial.print("ESC throttle set to: ");
-//       Serial.println(value);  // Print the current throttle value
-//     } else {
-//       Serial.println("Invalid value! Please enter a number between 1000 and 2000.");
-//     }
-//   }
-// }
-
-
 #include <Servo.h>
 
-Servo esc1, esc2, esc3, esc4;  // Create Servo objects to control the ESCs
+Servo esc1, esc2, esc3, esc4;
+
+// Defining Motor's pin association
+#define MOTOR1 = 5  // Back Right
+#define MOTOR2 = 6  // Front Right
+#define MOTOR3 = 9  // Back Left
+#define MOTOR4 = 10 // Front Left
+
+// Defining Motor's spin direction for yaw control
+// 1 Means motors are rotating inwards (props in), -1 means rotating out (props out)
+#define MOTOR_DIRECTION = 1
+
 
 void setup() {
-  esc1.attach(9);  // Attach ESCs to their respective pins
-  esc2.attach(10);
-  esc3.attach(5);
-  esc4.attach(6);
-  
-  Serial.begin(9600);  // Start serial communication at 9600 baud rate
-  delay(2000);  // Wait for ESCs to initialize
+  Serial.begin(9600);
+  delay(1000);  // Wait for ESCs to power up
 
-  // ESC calibration sequence
+  // Attach ESCs to their respective pins
+  esc1.attach(MOTOR1);
+  esc2.attach(MOTOR2);
+  esc3.attach(MOTOR3);
+  esc4.attach(MOTOR4);
+
+  // ESC Calibration: 1000us min, and 2000us max
+  Serial.println("Calibrating ESCs...");
+  Serial.println("Step 1: Sending maximum throttle (2000 µs).");
+  Serial.println("Please turn on your ESCs *now* if required.");
+  Serial.println("Press Enter to continue if ESC has \"angrily beeped\"...");
+
+  // Step 1: Send max throttle
+  esc1.writeMicroseconds(2000);
+  esc2.writeMicroseconds(2000);
+  esc3.writeMicroseconds(2000);
+  esc4.writeMicroseconds(2000);
+
+  // Wait for user input to proceed
+  while (Serial.available() == 0) {
+    // Do nothing, wait for user input
+  }
+  Serial.read();  // Clear the buffer
+
+  Serial.println("Continuing calibration...");
+
+  // Step 2: Send min throttle
   esc1.writeMicroseconds(1000);
   esc2.writeMicroseconds(1000);
   esc3.writeMicroseconds(1000);
   esc4.writeMicroseconds(1000);
-  delay(3000);
-  
-  // esc1.writeMicroseconds(2000);
-  // esc2.writeMicroseconds(2000);
-  // esc3.writeMicroseconds(2000);
-  // esc4.writeMicroseconds(2000);
-  // delay(3000);
-  
-  // esc1.writeMicroseconds(1000);
-  // esc2.writeMicroseconds(1000);
-  // esc3.writeMicroseconds(1000);
-  // esc4.writeMicroseconds(1000);
-  // delay(3000);
-  
-  Serial.println("ESCs initialized. Send values between 1000 and 2000 for throttle control.");
+  delay(3000);  // Wait for ESC to register min throttle
+
+  Serial.println("ESCs initialized. Enter a throttle value between 1000-2000.");
 }
 
 void loop() {
-  if (Serial.available() > 0) {  // Check if data is available to read from serial
-    int value = Serial.parseInt();  // Read the integer from serial input
-
-    if (value >= 1000 && value <= 2000) {  // Ensure the value is within the valid range
-      esc1.writeMicroseconds(value);
-      esc2.writeMicroseconds(value);
-      esc3.writeMicroseconds(value);
-      esc4.writeMicroseconds(value);
-      Serial.print("ESC throttle set to: ");
-      Serial.println(value);  // Print the current throttle value
-    } else {
-      Serial.println("Invalid value! Please enter a number between 1000 and 2000.");
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();  // Remove whitespace/newlines
+    
+    if (input.length() > 0) {
+      int value = input.toInt();
+      if (value >= 1000 && value <= 2000) {
+        esc1.writeMicroseconds(value);
+        esc2.writeMicroseconds(value);
+        esc3.writeMicroseconds(value);
+        esc4.writeMicroseconds(value);
+        Serial.print("ESC throttle set to: ");
+        Serial.println(value);
+      } else {
+        Serial.println("Invalid value! Enter a number between 1000 and 2000.");
+      }
     }
   }
 }
