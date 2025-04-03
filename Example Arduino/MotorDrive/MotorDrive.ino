@@ -3,14 +3,14 @@
 Servo esc1, esc2, esc3, esc4;
 
 // Defining Motor's pin association
-#define MOTOR1 = 5  // Back Right
-#define MOTOR2 = 6  // Front Right
-#define MOTOR3 = 9  // Back Left
-#define MOTOR4 = 10 // Front Left
+#define MOTOR1 5  // Back Right
+#define MOTOR2 6  // Front Right
+#define MOTOR3 9  // Back Left
+#define MOTOR4 10 // Front Left
 
 // Defining Motor's spin direction for yaw control
 // 1 Means motors are rotating inwards (props in), -1 means rotating out (props out)
-#define MOTOR_DIRECTION = 1
+#define MOTOR_DIRECTION 1
 
 
 void setup() {
