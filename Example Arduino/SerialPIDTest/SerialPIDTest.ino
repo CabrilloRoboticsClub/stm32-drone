@@ -4,12 +4,17 @@ ArduPID YAWController;
 ArduPID ROLLController;
 ArduPID PITCHController;
 
-double p = 1.0;      // Proportional Gain
-double i = 0.00;      // Integral Gain
-double d = 70.0;       // Derivative Gain
-double yaw_p = 2.0;  // Proportional Gain
-double yaw_i = 0.00;  // Integral Gain
-double yaw_d = 0.1;   // Derivative Gain
+double YAW_P = 50.0;  // Proportional Gain
+double YAW_I = 0.00;  // Integral Gain
+double YAW_D = 50.0;   // Derivative Gain
+
+double ROLL_P = 50.0;   // Derivative Gain
+double ROLL_I = 0.00;   // Derivative Gain
+double ROLL_D = 50.0;   // Derivative Gain
+
+double PITCH_P = 50.0;      // Proportional Gain
+double PITCH_I = 0.00;      // Integral Gain
+double PITCH_D = 50.0;       // Derivative Gain
 
 double YAWoutput;
 double ROLLoutput;
@@ -136,14 +141,14 @@ void setup() {
   Serial.println("Reading events");
   delay(100);
 
-  YAWController.begin(&yaw_rotation, &YAWoutput, &target_states.yaw, yaw_p, yaw_i, yaw_d);
-  YAWController.setOutputLimits(-25.0, 25.0);
+  YAWController.begin(&yaw_rotation, &YAWoutput, &target_states.yaw, YAW_P, YAW_I, YAW_D);
+  YAWController.setOutputLimits(-200, 200);
 
-  PITCHController.begin(&ypr.pitch, &PITCHoutput, &target_states.pitch, p, i, d);
-  PITCHController.setOutputLimits(-25.0, 25.0);
+  PITCHController.begin(&ypr.pitch, &PITCHoutput, &target_states.pitch,PITCH_P, PITCH_I, PITCH_D);
+  PITCHController.setOutputLimits(-200.0, 200.0);
 
-  ROLLController.begin(&ypr.roll, &ROLLoutput, &target_states.roll, p, i, d);
-  ROLLController.setOutputLimits(-25.0, 25.0);
+  ROLLController.begin(&ypr.roll, &ROLLoutput, &target_states.roll, ROLL_P, ROLL_I, ROLL_D);
+  ROLLController.setOutputLimits(-200.0, 200.0);
 }
 // Functions for IMU Computation
 void quaternionToEuler(double qr, double qi, double qj, double qk, euler_t* ypr, bool degrees = false) {
@@ -203,8 +208,8 @@ void loop() {
       target_states.roll = values[3];
 
       // Validate throttle range
-      if (target_states.throttle <= 0 || target_states.throttle > 100) {
-        Serial.println("Invalid throttle! Enter a number between 0 and 100.");
+      if (target_states.throttle <= 1000 || target_states.throttle > 2000) {
+        Serial.println("Invalid throttle! Enter a number between 1000 and 2000.");
       } else {
         Serial.print("Throttle: ");
         Serial.print(target_states.throttle);
@@ -286,23 +291,19 @@ void loop() {
 
     // Motor Powers!
     //1 Back Right
-    Unmapped_T1 = (target_states.throttle + target_states.throttle * (PITCHoutput / 100) - target_states.throttle * (ROLLoutput / 100) - target_states.throttle * (YAWoutput / 100));
+    T1 = (target_states.throttle + PITCHoutput - ROLLoutput - YAWoutput);
 
     //2 Front Right
-    Unmapped_T2 = (target_states.throttle - target_states.throttle * (PITCHoutput / 100) - target_states.throttle * (ROLLoutput / 100) + target_states.throttle * (YAWoutput / 100));
+    T2 = (target_states.throttle - PITCHoutput - ROLLoutput + YAWoutput);
 
     //3 Back Left
-    Unmapped_T3 = (target_states.throttle + target_states.throttle * (PITCHoutput / 100) + target_states.throttle * (ROLLoutput / 100) - target_states.throttle * (YAWoutput / 100));
+    T3 = (target_states.throttle + PITCHoutput + ROLLoutput - YAWoutput);
 
     //4 Front Left
-    Unmapped_T4 = (target_states.throttle - target_states.throttle * (PITCHoutput / 100) + target_states.throttle * (ROLLoutput / 100) + target_states.throttle * (YAWoutput / 100));
+    T4 = (target_states.throttle - PITCHoutput + ROLLoutput + YAWoutput);
 
 
-    if (target_states.throttle != 0) {
-      T1 = mapDouble(Unmapped_T1, 0.0, 100.0, 1000.0, 2000.0);
-      T2 = mapDouble(Unmapped_T2, 0.0, 100.0, 1000.0, 2000.0);
-      T3 = mapDouble(Unmapped_T3, 0.0, 100.0, 1000.0, 2000.0);
-      T4 = mapDouble(Unmapped_T4, 0.0, 100.0, 1000.0, 2000.0);
+    if (target_states.throttle != 1000) {
 
       T1 = constrain(T1, 1025, 2000);
       T2 = constrain(T2, 1025, 2000);
