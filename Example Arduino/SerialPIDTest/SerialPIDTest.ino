@@ -4,12 +4,13 @@ ArduPID YAWController;
 ArduPID ROLLController;
 ArduPID PITCHController;
 
-double p = 0.3;  // Proportional Gain
-double i = 0.0;  // Integral Gain
-double d = 0.0;  // Derivative Gain
+double p = 1.0;      // Proportional Gain
+double i = 0.00;      // Integral Gain
+double d = 70.0;       // Derivative Gain
 double yaw_p = 2.0;  // Proportional Gain
-double yaw_i = 0.0;  // Integral Gain
-double yaw_d = 0.0;  // Derivative Gain
+double yaw_i = 0.00;  // Integral Gain
+double yaw_d = 0.1;   // Derivative Gain
+
 double YAWoutput;
 double ROLLoutput;
 double PITCHoutput;
@@ -25,16 +26,16 @@ double PITCHoutput;
 
 // Euler orientation stored
 struct euler_t {
-  double yaw;   // YAW    + Angle is LEFT ROTATION <-- We will mostly ignore this for now
-  double pitch; // PITCH  + Angle is FORWARD ROTATION
-  double roll;  // ROLL:  + Angle is RIGHT ROTATION
+  double yaw;    // YAW    + Angle is LEFT ROTATION <-- We will mostly ignore this for now
+  double pitch;  // PITCH  + Angle is FORWARD ROTATION
+  double roll;   // ROLL:  + Angle is RIGHT ROTATION
 
 } ypr;
 
 // Target states orientation stored
 struct target_euler_t {
-  int throttle = 1000;
-  double yaw = 0.0;   // Note this one is in (rads/s), not an abs location (+ Rotation is LEFT)
+  int throttle = 0.0;
+  double yaw = 0.0;  // Note this one is in (rads/s), not an abs location (+ Rotation is LEFT)
   double pitch = 0.0;
   double roll = 0.0;
 } target_states;
@@ -72,10 +73,16 @@ Servo esc1, esc2, esc3, esc4;
 #define MOTOR3 9   // Back Left
 #define MOTOR4 10  // Front Left
 
-double T1 = 1000;
-double T2 = 1000;
-double T3 = 1000;
-double T4 = 1000;
+double T1;
+double T2;
+double T3;
+double T4;
+
+double Unmapped_T1 = 0;
+double Unmapped_T2 = 0;
+double Unmapped_T3 = 0;
+double Unmapped_T4 = 0;
+
 
 
 // Defining Motor's spin direction. (This is relevent for YAW control)
@@ -121,7 +128,8 @@ void setup() {
   setReports(reportType, reportIntervalUs);
   if (!bno08x.enableReport(SH2_GYRO_INTEGRATED_RV)) {
     Serial.println("Could not enable gyroscope report");
-    while (1);
+    while (1)
+      ;
   }
 
 
@@ -129,13 +137,13 @@ void setup() {
   delay(100);
 
   YAWController.begin(&yaw_rotation, &YAWoutput, &target_states.yaw, yaw_p, yaw_i, yaw_d);
-  YAWController.setOutputLimits(-15.0, 15.0);
+  YAWController.setOutputLimits(-25.0, 25.0);
 
   PITCHController.begin(&ypr.pitch, &PITCHoutput, &target_states.pitch, p, i, d);
-  PITCHController.setOutputLimits(-15.0, 15.0);
+  PITCHController.setOutputLimits(-25.0, 25.0);
 
   ROLLController.begin(&ypr.roll, &ROLLoutput, &target_states.roll, p, i, d);
-  ROLLController.setOutputLimits(-15.0, 15.0);
+  ROLLController.setOutputLimits(-25.0, 25.0);
 }
 // Functions for IMU Computation
 void quaternionToEuler(double qr, double qi, double qj, double qk, euler_t* ypr, bool degrees = false) {
@@ -164,6 +172,11 @@ void quaternionToEulerGI(sh2_GyroIntegratedRV_t* rotational_vector, euler_t* ypr
   quaternionToEuler(rotational_vector->real, rotational_vector->i, rotational_vector->j, rotational_vector->k, ypr, degrees);
 }
 
+double mapDouble(double x, double in_min, double in_max, double out_min, double out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+
 void loop() {
 
   // Thorttle
@@ -190,8 +203,8 @@ void loop() {
       target_states.roll = values[3];
 
       // Validate throttle range
-      if (target_states.throttle < 1000 || target_states.throttle > 2000) {
-        Serial.println("Invalid throttle! Enter a number between 1000 and 2000.");
+      if (target_states.throttle <= 0 || target_states.throttle > 100) {
+        Serial.println("Invalid throttle! Enter a number between 0 and 100.");
       } else {
         Serial.print("Throttle: ");
         Serial.print(target_states.throttle);
@@ -216,30 +229,31 @@ void loop() {
 
   if (bno08x.getSensorEvent(&sensorValue)) {
     // in this demo only one report type will be received depending on FAST_MODE define (above)
-switch (sensorValue.sensorId) {
-  case SH2_ARVR_STABILIZED_RV:
-    quaternionToEulerRV(&sensorValue.un.arvrStabilizedRV, &ypr, true);
+    switch (sensorValue.sensorId) {
+      case SH2_ARVR_STABILIZED_RV:
+        quaternionToEulerRV(&sensorValue.un.arvrStabilizedRV, &ypr, true);
 
-  case SH2_GYRO_INTEGRATED_RV:
-    // float x = sensorValue.un.gyroIntegratedRV.angVelX;
-    // float y = sensorValue.un.gyroIntegratedRV.angVelY;
-    yaw_rotation = sensorValue.un.gyroIntegratedRV.angVelZ;
+      case SH2_GYRO_INTEGRATED_RV:
+        // float x = sensorValue.un.gyroIntegratedRV.angVelX;
+        // float y = sensorValue.un.gyroIntegratedRV.angVelY;
+        yaw_rotation = sensorValue.un.gyroIntegratedRV.angVelZ;
 
-    // Serial.print("Angular Velocity (rad/s) - X: ");
-    // Serial.print(x, 5);
-    // Serial.print(", Y: ");
-    // Serial.print(y, 5);
-    Serial.print("Yaw Velocity (rad/s) - Z: ");
-    Serial.print(yaw_rotation, 5);  // use println to add a newline
+        // Serial.print("Angular Velocity (rad/s) - X: ");
+        // Serial.print(x, 5);
+        // Serial.print(", Y: ");
+        // Serial.print(y, 5);
+        Serial.print("Yaw Velocity (rad/s) - Z: ");
+        Serial.print(yaw_rotation, 5);  // use println to add a newline
 
-    quaternionToEulerGI(&sensorValue.un.gyroIntegratedRV, &ypr, true);
-    break;
-}
+        quaternionToEulerGI(&sensorValue.un.gyroIntegratedRV, &ypr, true);
+        break;
+    }
 
-    YAWController.compute();
-    PITCHController.compute();
-    ROLLController.compute();
-
+    if (target_states.throttle != 0) {
+      YAWController.compute();
+      PITCHController.compute();
+      ROLLController.compute();
+    }
     // For Debugging!
     static long last = 0;
     long now = micros();
@@ -272,35 +286,43 @@ switch (sensorValue.sensorId) {
 
     // Motor Powers!
     //1 Back Right
-    T1 = target_states.throttle + target_states.throttle * (PITCHoutput / 100) - target_states.throttle * (ROLLoutput / 100) - target_states.throttle * (YAWoutput / 100); 
+    Unmapped_T1 = (target_states.throttle + target_states.throttle * (PITCHoutput / 100) - target_states.throttle * (ROLLoutput / 100) - target_states.throttle * (YAWoutput / 100));
 
     //2 Front Right
-    T2 = target_states.throttle - target_states.throttle * (PITCHoutput / 100) - target_states.throttle * (ROLLoutput / 100) + target_states.throttle * (YAWoutput / 100);
+    Unmapped_T2 = (target_states.throttle - target_states.throttle * (PITCHoutput / 100) - target_states.throttle * (ROLLoutput / 100) + target_states.throttle * (YAWoutput / 100));
 
     //3 Back Left
-    T3 = target_states.throttle + target_states.throttle * (PITCHoutput / 100) + target_states.throttle * (ROLLoutput / 100) - target_states.throttle * (YAWoutput / 100);
+    Unmapped_T3 = (target_states.throttle + target_states.throttle * (PITCHoutput / 100) + target_states.throttle * (ROLLoutput / 100) - target_states.throttle * (YAWoutput / 100));
 
     //4 Front Left
-    T4 = target_states.throttle - target_states.throttle * (PITCHoutput / 100) + target_states.throttle * (ROLLoutput / 100) + target_states.throttle * (YAWoutput / 100);
+    Unmapped_T4 = (target_states.throttle - target_states.throttle * (PITCHoutput / 100) + target_states.throttle * (ROLLoutput / 100) + target_states.throttle * (YAWoutput / 100));
 
 
-    if (target_states.throttle != 1000) {
+    if (target_states.throttle != 0) {
+      T1 = mapDouble(Unmapped_T1, 0.0, 100.0, 1000.0, 2000.0);
+      T2 = mapDouble(Unmapped_T2, 0.0, 100.0, 1000.0, 2000.0);
+      T3 = mapDouble(Unmapped_T3, 0.0, 100.0, 1000.0, 2000.0);
+      T4 = mapDouble(Unmapped_T4, 0.0, 100.0, 1000.0, 2000.0);
+
       T1 = constrain(T1, 1025, 2000);
       T2 = constrain(T2, 1025, 2000);
       T3 = constrain(T3, 1025, 2000);
       T4 = constrain(T4, 1025, 2000);
 
-      esc1.writeMicroseconds(T1);
-      esc2.writeMicroseconds(T2);
-      esc3.writeMicroseconds(T3);
-      esc4.writeMicroseconds(T4);
-
     } else {
-      esc1.writeMicroseconds(1000);
-      esc2.writeMicroseconds(1000);
-      esc3.writeMicroseconds(1000);
-      esc4.writeMicroseconds(1000);
+
+      T1 = 1000;
+      T2 = 1000;
+      T3 = 1000;
+      T4 = 1000;
+
     }
+
+    esc1.writeMicroseconds(T1);
+    esc2.writeMicroseconds(T2);
+    esc3.writeMicroseconds(T3);
+    esc4.writeMicroseconds(T4);
+
     Serial.print(T1);
     Serial.print("\t");
     Serial.print(T2);
@@ -308,7 +330,5 @@ switch (sensorValue.sensorId) {
     Serial.print(T3);
     Serial.print("\t");
     Serial.println(T4);
-
-    
   }
 }
