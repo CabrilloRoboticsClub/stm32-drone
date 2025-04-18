@@ -6,9 +6,9 @@
 // ========== PID Setup ==========
 ArduPID PITCHController;
 
-double PITCH_P = 10.0;
-double PITCH_I = 0.00;
-double PITCH_D = 0.0;
+double PITCH_P = 1.5;
+double PITCH_I = 0.0;
+double PITCH_D = 400.0;
 
 double PITCHoutput;
 
@@ -152,8 +152,8 @@ void loop() {
     Serial.println(PITCHoutput);
 
     // Calculate Motor Outputs
-    T1 = target_states.throttle + PITCHoutput; // Back
-    T2 = target_states.throttle - PITCHoutput; // Front
+    T1 = target_states.throttle - PITCHoutput; // Back
+    T2 = target_states.throttle + PITCHoutput; // Front
 
     // Clamp to ESC range
     T1 = constrain(T1, 1000, 2000);
