@@ -14,7 +14,7 @@ Target = []
 data_lock = threading.Lock()
 
 MAX_POINTS = 5000
-show_output = True  # Flag to control the visibility of the Output graph
+show_output = True
 
 def read_serial():
     while True:
@@ -52,14 +52,12 @@ def send_serial_data():
         except Exception as e:
             print("Error sending data:", e)
 
-# Start serial threads
 serial_thread = threading.Thread(target=read_serial, daemon=True)
 send_thread = threading.Thread(target=send_serial_data, daemon=True)
 
 serial_thread.start()
 send_thread.start()
 
-# Plotting setup
 fig, ax = plt.subplots(figsize=(16, 12)) 
 line_output, = ax.plot([], [], label='Output')
 line_pitch, = ax.plot([], [], label='Pitch')
@@ -70,7 +68,6 @@ ax.set_xlabel("Sample Index")
 ax.set_ylabel("Value")
 ax.legend(loc='upper left')
 
-# Button to toggle Output data
 def toggle_output(event):
     global show_output
     show_output = not show_output
@@ -84,7 +81,6 @@ ax_button = plt.axes([0.81, 0.01, 0.18, 0.05])  # Button position [x, y, width, 
 button = widgets.Button(ax_button, 'Toggle Output')
 button.on_clicked(toggle_output)
 
-# Plot update function
 def update(frame):
     with data_lock:
         max_len = max(len(Output), len(Pitch), len(Target), 1)
@@ -93,7 +89,7 @@ def update(frame):
         if show_output:
             line_output.set_data(range(len(Output)), Output)
         else:
-            line_output.set_data([], [])  # Disable the Output graph by setting empty data
+            line_output.set_data([], [])
 
         line_pitch.set_data(range(len(Pitch)), Pitch)
         line_target.set_data(range(len(Target)), Target)

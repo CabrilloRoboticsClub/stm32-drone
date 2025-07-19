@@ -6,9 +6,9 @@
 // ========== PID Setup ==========
 ArduPID ROLLController;
 
-double ROLL_P = 2.5;
+double ROLL_P = 1.0;
 double ROLL_I = 0.0;
-double ROLL_D = 1000.0;
+double ROLL_D = 224.0;
 
 double ROLLoutput;
 
@@ -19,9 +19,8 @@ struct euler_t {
   double roll;
 } ypr;
 
-// Filtered values and constants
 struct euler_t yprFiltered;
-double alpha = 0.2; // EMA smoothing factor (0<alpha<1)
+double alpha = 0.2; // EMA smoothing factor
 
 struct target_euler_t {
   int throttle = 0;
@@ -32,26 +31,24 @@ struct target_euler_t {
 
 Adafruit_BNO08x bno08x(-1);
 sh2_SensorValue_t sensorValue;
-
 sh2_SensorId_t reportType = SH2_ARVR_STABILIZED_RV;
 long reportIntervalUs = 5000;
-
-void setReports(sh2_SensorId_t reportType, long report_interval) {
-  Serial.println("Setting desired reports");
-  if (!bno08x.enableReport(reportType, report_interval)) {
-    Serial.println("Could not enable report");
-  }
-}
 
 // ========== ESC + Motor Setup ==========
 Servo esc1, esc2, esc3, esc4;
 
-#define MOTOR1 5    // Back Right motor
-#define MOTOR2 6    // Front Right motor
-#define MOTOR3 9    // Back Left motor
-#define MOTOR4 10   // Front Left motor
+#define MOTOR1 5
+#define MOTOR2 6
+#define MOTOR3 9
+#define MOTOR4 10
 
 double T1, T2, T3, T4;
+
+// ========== Loop Timing for 100 Hz ==========
+unsigned long lastLoopTime = 0;
+const unsigned long loopInterval = 10000; // microseconds (100 Hz)
+unsigned long loopCounter = 0;
+unsigned long lastRatePrint = 0;
 
 // ========== Quaternion to Euler ==========
 void quaternionToEuler(double qr, double qi, double qj, double qk, euler_t* ypr, bool degrees = false) {
@@ -81,6 +78,13 @@ void quaternionToEulerRV(sh2_RotationVectorWAcc_t* rv, euler_t* ypr, bool degree
   quaternionToEuler(rv->real, rv->i, rv->j, rv->k, ypr, degrees);
 }
 
+void setReports(sh2_SensorId_t reportType, long report_interval) {
+  Serial.println("Setting desired reports");
+  if (!bno08x.enableReport(reportType, report_interval)) {
+    Serial.println("Could not enable report");
+  }
+}
+
 // ========== Setup ==========
 void setup() {
   target_states.throttle = 1000;
@@ -108,16 +112,19 @@ void setup() {
   Serial.println("BNO08x Found!");
   setReports(reportType, reportIntervalUs);
 
-  // Initialize filtered values to zero
   yprFiltered.yaw = yprFiltered.pitch = yprFiltered.roll = 0.0;
 
-  // Initialize PID controller for roll using filtered roll
   ROLLController.begin(&yprFiltered.roll, &ROLLoutput, &target_states.roll, ROLL_P, ROLL_I, ROLL_D);
   ROLLController.setOutputLimits(-200.0, 200.0);
 }
 
-// ========== Main Loop ==========
+// ========== Loop ==========
 void loop() {
+  unsigned long now = micros();
+  if (now - lastLoopTime < loopInterval) return;
+  lastLoopTime = now;
+
+  // ========== Serial Input ==========
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
     input.trim();
@@ -149,32 +156,30 @@ void loop() {
     }
   }
 
+  // ========== IMU & Control ==========
   if (bno08x.wasReset()) setReports(reportType, reportIntervalUs);
 
   if (bno08x.getSensorEvent(&sensorValue)) {
     if (sensorValue.sensorId == SH2_ARVR_STABILIZED_RV) {
       quaternionToEulerRV(&sensorValue.un.arvrStabilizedRV, &ypr, true);
-      applyFilter(&ypr, &yprFiltered);
+      //applyFilter(&ypr, &yprFiltered);
+      yprFiltered = ypr;
     }
 
     if (target_states.throttle != 0) {
       ROLLController.compute();
     }
 
-    // Debug Print
     Serial.print("Filtered Roll: "); Serial.print(yprFiltered.roll);
     Serial.print(" Target: "); Serial.print(target_states.roll);
     Serial.print(" Output: "); Serial.print(ROLLoutput);
-
-    // Actively return extra values
     Serial.print(" Extra1: "); Serial.print(target_states.extra1);
     Serial.print(" Extra2: "); Serial.println(target_states.extra2);
 
-    // Motor mixing
-    T1 = constrain(target_states.throttle + ROLLoutput, 1025, 2000);
-    T2 = constrain(target_states.throttle + ROLLoutput, 1025, 2000);
-    T3 = constrain(target_states.throttle - ROLLoutput, 1025, 2000);
-    T4 = constrain(target_states.throttle - ROLLoutput, 1025, 2000);
+    T1 = constrain(target_states.throttle - ROLLoutput, 1025, 2000);
+    T2 = constrain(target_states.throttle - ROLLoutput, 1025, 2000);
+    T3 = constrain(target_states.throttle + ROLLoutput, 1025, 2000);
+    T4 = constrain(target_states.throttle + ROLLoutput, 1025, 2000);
 
     if (target_states.throttle != 1000) {
       esc1.writeMicroseconds((int)T1);
@@ -188,5 +193,14 @@ void loop() {
       esc4.writeMicroseconds(1000);
     }
   }
-}
 
+  // ========== Loop Rate Monitor ==========
+  loopCounter++;
+  if (millis() - lastRatePrint >= 1000) {
+    Serial.print("Loop Rate: ");
+    Serial.print(loopCounter);
+    Serial.println(" Hz");
+    loopCounter = 0;
+    lastRatePrint = millis();
+  }
+}
