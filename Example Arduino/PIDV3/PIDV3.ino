@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <Servo.h>
+#include "CRSFforArduino.hpp"
 
 Servo esc1, esc2, esc3, esc4;
 #define MOTOR1 5
@@ -12,53 +13,57 @@ float RatePitch, RateRoll, RateYaw;
 float RateCalibrationPitch, RateCalibrationRoll, RateCalibrationYaw;
 int RateCalibrationNumber = 0;
 
+// Filtered values
+float FilteredRatePitch = 0, FilteredRateRoll = 0, FilteredRateYaw = 0;
+const float EMA_ALPHA = 0.1; // Lower = smoother, higher = more responsive
+
 // Timing
 uint32_t LoopTimer;
 const float TimeStep = 0.004; // 250Hz
 
-// Serial input
+// PID variables
 float throttle = 1000;
 float DesiredRateRoll = 0, DesiredRatePitch = 0, DesiredRateYaw = 0;
+bool armed = false;
 
-// PID variables
 float ErrorRateRoll, ErrorRatePitch, ErrorRateYaw;
 float PrevErrorRateRoll = 0, PrevErrorRatePitch = 0, PrevErrorRateYaw = 0;
 float PrevItermRateRoll = 0, PrevItermRatePitch = 0, PrevItermRateYaw = 0;
 float PIDReturn[3];
 float OutputRoll, OutputPitch, OutputYaw;
 
-// PID constants
 float PRateRoll = 0.6, IRateRoll = 3.5, DRateRoll = 0.03;
 float PRatePitch = 0.6, IRatePitch = 3.5, DRatePitch = 0.03;
 float PRateYaw = 2.0, IRateYaw = 12.0, DRateYaw = 0.0;
 
-void readSerialInput() {
-  if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();
+// CRSF
+CRSFforArduino *crsf = nullptr;
 
-    double values[4]; int index = 0;
-    char* ptr = strtok((char*)input.c_str(), ",");
+float applyEMA(float newValue, float prevEMA, float alpha) {
+  return alpha * newValue + (1.0 - alpha) * prevEMA;
+}
 
-    while (ptr && index < 4) {
-      values[index++] = atof(ptr);
-      ptr = strtok(NULL, ",");
-    }
+void onReceiveRcChannels(serialReceiverLayer::rcChannels_t *rcChannels) {
+  if (rcChannels->failsafe) return;
 
-    if (index == 4) {
-      throttle = constrain((int)values[0], 1000, 2000);
-      DesiredRateRoll = values[1];
-      DesiredRatePitch = values[2];
-      DesiredRateYaw = values[3];
-    } else {
-      Serial.println("Invalid input! Format: throttle,roll_rate,pitch_rate,yaw_rate");
-    }
+  int rawThrottle = crsf->rcToUs(crsf->getChannel(3)); // T
+  int rawRoll     = crsf->rcToUs(crsf->getChannel(1)); // A
+  int rawArm      = crsf->rcToUs(crsf->getChannel(5)); // Aux1
+
+  armed = rawArm > 1500;
+
+  if (armed) {
+    throttle = constrain(rawThrottle, 1000, 2000);
+    DesiredRateRoll = map(rawRoll, 1000, 2000, -150, 150);  // scale to deg/sec
+  } else {
+    throttle = 1000;
+    DesiredRateRoll = 0;
   }
 }
 
 void gyro_signals() {
   Wire.beginTransmission(0x68);
-  Wire.write(0x43);  // Start with Gyro X
+  Wire.write(0x43);
   Wire.endTransmission();
   Wire.requestFrom(0x68, 6);
 
@@ -66,9 +71,9 @@ void gyro_signals() {
   int16_t GyroY = Wire.read() << 8 | Wire.read();
   int16_t GyroZ = Wire.read() << 8 | Wire.read();
 
-  RateRoll = (float)GyroX / 65.5;
+  RateRoll  = (float)GyroX / 65.5;
   RatePitch = (float)GyroY / 65.5;
-  RateYaw = (float)GyroZ / 65.5;
+  RateYaw   = (float)GyroZ / 65.5;
 }
 
 void pid_equation(float Error, float P , float I, float D, float PrevError, float PrevIterm) {
@@ -84,9 +89,9 @@ void pid_equation(float Error, float P , float I, float D, float PrevError, floa
 }
 
 void reset_pid() {
-  PrevErrorRateRoll = 0; PrevItermRateRoll = 0;
-  PrevErrorRatePitch = 0; PrevItermRatePitch = 0;
-  PrevErrorRateYaw = 0; PrevItermRateYaw = 0;
+  PrevErrorRateRoll = PrevItermRateRoll = 0;
+  PrevErrorRatePitch = PrevItermRatePitch = 0;
+  PrevErrorRateYaw = PrevItermRateYaw = 0;
 }
 
 void setup() {
@@ -97,21 +102,11 @@ void setup() {
   Wire.setClock(400000);
   delay(250);
 
-  // MPU6050 setup
-  Wire.beginTransmission(0x68);
-  Wire.write(0x6B);  // Power management register
-  Wire.write(0x00);  // Wake up
-  Wire.endTransmission();
-
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1A);  // DLPF config
-  Wire.write(0x05);
-  Wire.endTransmission();
-
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B);  // Gyro config
-  Wire.write(0x08);
-  Wire.endTransmission();
+  // MPU6050 init
+  Wire.beginTransmission(0x68); Wire.write(0x6B); Wire.write(0x00); Wire.endTransmission(); delay(10);
+  Wire.beginTransmission(0x68); Wire.write(0x1A); Wire.write(0x03); Wire.endTransmission(); delay(10);
+  Wire.beginTransmission(0x68); Wire.write(0x19); Wire.write(0x03); Wire.endTransmission(); delay(10);
+  Wire.beginTransmission(0x68); Wire.write(0x1B); Wire.write(0x08); Wire.endTransmission(); delay(10);
 
   for (RateCalibrationNumber = 0; RateCalibrationNumber < 2000; RateCalibrationNumber++) {
     gyro_signals();
@@ -120,54 +115,48 @@ void setup() {
     RateCalibrationYaw += RateYaw;
     delay(1);
   }
+
   RateCalibrationRoll /= 2000;
   RateCalibrationPitch /= 2000;
   RateCalibrationYaw /= 2000;
 
-  esc1.attach(MOTOR1);
-  esc2.attach(MOTOR2);
-  esc3.attach(MOTOR3);
-  esc4.attach(MOTOR4);
+  FilteredRateRoll = RateCalibrationRoll;
+  FilteredRatePitch = RateCalibrationPitch;
+  FilteredRateYaw = RateCalibrationYaw;
 
-  esc1.writeMicroseconds(1000);
-  esc2.writeMicroseconds(1000);
-  esc3.writeMicroseconds(1000);
-  esc4.writeMicroseconds(1000);
+  esc1.attach(MOTOR1); esc2.attach(MOTOR2); esc3.attach(MOTOR3); esc4.attach(MOTOR4);
+  esc1.writeMicroseconds(1000); esc2.writeMicroseconds(1000); esc3.writeMicroseconds(1000); esc4.writeMicroseconds(1000);
   delay(3000);
+
+  crsf = new CRSFforArduino();
+  if (!crsf->begin()) {
+    Serial.println("CRSF init failed");
+    while (1) delay(10);
+  }
+  crsf->setRcChannelsCallback(onReceiveRcChannels);
 
   LoopTimer = micros();
 }
 
 void loop() {
-  readSerialInput();
+  crsf->update();
   gyro_signals();
 
-  RateRoll -= RateCalibrationRoll;
+  RateRoll  -= RateCalibrationRoll;
   RatePitch -= RateCalibrationPitch;
-  RateYaw -= RateCalibrationYaw;
+  RateYaw   -= RateCalibrationYaw;
 
-  // Roll PID
-  ErrorRateRoll = DesiredRateRoll - RateRoll;
+  FilteredRateRoll  = applyEMA(RateRoll,  FilteredRateRoll,  EMA_ALPHA);
+  FilteredRatePitch = applyEMA(RatePitch, FilteredRatePitch, EMA_ALPHA);
+  FilteredRateYaw   = applyEMA(RateYaw,   FilteredRateYaw,   EMA_ALPHA);
+
+  ErrorRateRoll = DesiredRateRoll - FilteredRateRoll;
   pid_equation(ErrorRateRoll, PRateRoll, IRateRoll, DRateRoll, PrevErrorRateRoll, PrevItermRateRoll);
   OutputRoll = PIDReturn[0];
   PrevErrorRateRoll = PIDReturn[1];
   PrevItermRateRoll = PIDReturn[2];
 
-  // // Pitch PID
-  // ErrorRatePitch = DesiredRatePitch - RatePitch;
-  // pid_equation(ErrorRatePitch, PRatePitch, IRatePitch, DRatePitch, PrevErrorRatePitch, PrevItermRatePitch);
-  // OutputPitch = PIDReturn[0];
-  // PrevErrorRatePitch = PIDReturn[1];
-  // PrevItermRatePitch = PIDReturn[2];
-
-  // // Yaw PID
-  // ErrorRateYaw = DesiredRateYaw - RateYaw;
-  // pid_equation(ErrorRateYaw, PRateYaw, IRateYaw, DRateYaw, PrevErrorRateYaw, PrevItermRateYaw);
-  // OutputYaw = PIDReturn[0];
-  // PrevErrorRateYaw = PIDReturn[1];
-  // PrevItermRateYaw = PIDReturn[2];
-
-  if (throttle > 1050) {
+  if (armed) {
     float M1 = throttle - OutputRoll - OutputPitch - OutputYaw;
     float M2 = throttle - OutputRoll + OutputPitch + OutputYaw;
     float M3 = throttle + OutputRoll + OutputPitch - OutputYaw;
@@ -183,7 +172,6 @@ void loop() {
     esc3.writeMicroseconds((int)M3);
     esc4.writeMicroseconds((int)M4);
   } else {
-    // Emergency stop
     esc1.writeMicroseconds(1000);
     esc2.writeMicroseconds(1000);
     esc3.writeMicroseconds(1000);
@@ -191,12 +179,11 @@ void loop() {
     reset_pid();
   }
 
-  // Debug output
   Serial.print("Throttle: "); Serial.print(throttle);
-  Serial.print(" | RateRoll: "); Serial.print(RateRoll);
+  Serial.print(" | RateRoll (filtered): "); Serial.print(FilteredRateRoll);
   Serial.print(" | Desired: "); Serial.print(DesiredRateRoll);
   Serial.print(" | PID: "); Serial.println(OutputRoll);
 
-  while (micros() - LoopTimer < 4000); // 250 Hz
+  while (micros() - LoopTimer < 4000);
   LoopTimer = micros();
 }
