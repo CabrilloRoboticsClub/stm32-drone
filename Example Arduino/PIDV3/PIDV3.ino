@@ -32,9 +32,12 @@ float PrevItermRateRoll = 0, PrevItermRatePitch = 0, PrevItermRateYaw = 0;
 float PIDReturn[3];
 float OutputRoll, OutputPitch, OutputYaw;
 
-float PRateRoll = 0.6, IRateRoll = 3.5, DRateRoll = 0.03;
-float PRatePitch = 0.6, IRatePitch = 3.5, DRatePitch = 0.03;
+float PRateRoll = 0.5, IRateRoll = 3.2, DRateRoll = 0.02;
+float PRatePitch = 0.5, IRatePitch = 3.2, DRatePitch = 0.02;
 float PRateYaw = 2.0, IRateYaw = 12.0, DRateYaw = 0.0;
+
+// Debug variables for PID terms
+float debugPterm, debugIterm, debugDterm;
 
 // CRSF
 CRSFforArduino *crsf = nullptr;
@@ -136,7 +139,13 @@ void setup() {
   crsf->setRcChannelsCallback(onReceiveRcChannels);
 
   LoopTimer = micros();
+
+  Serial.println("Throttle,RateRoll,DesiredRoll,PID,Pterm,Iterm,Dterm,TPA");
+
 }
+
+const int TPA_BREAKPOINT = 1200;
+const float TPA_FACTOR_AT_MAX = 0.45;
 
 void loop() {
   crsf->update();
@@ -150,11 +159,37 @@ void loop() {
   FilteredRatePitch = applyEMA(RatePitch, FilteredRatePitch, EMA_ALPHA);
   FilteredRateYaw   = applyEMA(RateYaw,   FilteredRateYaw,   EMA_ALPHA);
 
+  // Calculate TPA scale for P and D
+  float tpa_scale = 1.0;
+  if (throttle > TPA_BREAKPOINT) {
+    float t = (throttle - TPA_BREAKPOINT) / (2000.0 - TPA_BREAKPOINT);
+    tpa_scale = 1.0 - t * (1.0 - TPA_FACTOR_AT_MAX);  // linear scale from 1 to 0.45
+  }
+
+  // Roll PID
   ErrorRateRoll = DesiredRateRoll - FilteredRateRoll;
-  pid_equation(ErrorRateRoll, PRateRoll, IRateRoll, DRateRoll, PrevErrorRateRoll, PrevItermRateRoll);
+  float scaledP = PRateRoll * tpa_scale;
+  float scaledD = DRateRoll * tpa_scale;
+
+  // Calculate PID terms for debug before calling pid_equation
+  debugPterm = scaledP * ErrorRateRoll;
+  debugIterm = PrevItermRateRoll + IRateRoll * (ErrorRateRoll + PrevErrorRateRoll) * TimeStep / 2;
+  debugIterm = constrain(debugIterm, -400, 400);
+  debugDterm = scaledD * (ErrorRateRoll - PrevErrorRateRoll) / TimeStep;
+
+  pid_equation(
+    ErrorRateRoll,
+    scaledP,
+    IRateRoll,
+    scaledD,
+    PrevErrorRateRoll,
+    PrevItermRateRoll
+  );
   OutputRoll = PIDReturn[0];
   PrevErrorRateRoll = PIDReturn[1];
   PrevItermRateRoll = PIDReturn[2];
+
+  // TODO: You can add similar PID calls and debug prints for Pitch and Yaw if needed
 
   if (armed) {
     float M1 = throttle - OutputRoll - OutputPitch - OutputYaw;
@@ -179,10 +214,23 @@ void loop() {
     reset_pid();
   }
 
-  Serial.print("Throttle: "); Serial.print(throttle);
-  Serial.print(" | RateRoll (filtered): "); Serial.print(FilteredRateRoll);
-  Serial.print(" | Desired: "); Serial.print(DesiredRateRoll);
-  Serial.print(" | PID: "); Serial.println(OutputRoll);
+  //Serial.print("Throttle: "); Serial.print(throttle);
+  //Serial.print(" | RateRoll (filtered): "); Serial.print(FilteredRateRoll);
+  //Serial.print(" | Desired: "); Serial.print(DesiredRateRoll);
+  //Serial.print(" | PID: "); Serial.print(OutputRoll);
+
+  //Serial.print(" | Pterm: "); Serial.print(scaledP, 4);
+  //Serial.print(" | Dterm: "); Serial.print(scaledD, 4);
+  //Serial.print(" | TPA: "); Serial.println(tpa_scale, 4);
+
+  Serial.print(throttle); Serial.print(",");
+  Serial.print(FilteredRateRoll); Serial.print(",");
+  Serial.print(DesiredRateRoll); Serial.print(",");
+  Serial.print(OutputRoll); Serial.print(",");
+  Serial.print(scaledP); Serial.print(",");
+  Serial.print(scaledD); Serial.print(",");
+  Serial.println(tpa_scale, 4);
+
 
   while (micros() - LoopTimer < 4000);
   LoopTimer = micros();
