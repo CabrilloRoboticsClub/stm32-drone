@@ -36,11 +36,7 @@ float PRateRoll = 0.4, IRateRoll = 1.25, DRateRoll = 0.015;
 float PRatePitch = 0.4, IRatePitch = 1.25, DRatePitch = 0.015;
 float PRateYaw = 2.0, IRateYaw = 12.0, DRateYaw = 0.0;
 
-// float PRatePitch = 0, IRatePitch = 0, DRatePitch = 0;
-// float PRateYaw = 0, IRateYaw = 0, DRateYaw = 0;
-
-
-// Debug variables
+// Debug variables (unused now, can be deleted if desired)
 float debugPterm, debugIterm, debugDterm;
 float debugPtermPitch, debugItermPitch, debugDtermPitch;
 float debugPtermYaw, debugItermYaw, debugDtermYaw;
@@ -54,11 +50,11 @@ float applyEMA(float newValue, float prevEMA, float alpha) {
 void onReceiveRcChannels(serialReceiverLayer::rcChannels_t *rcChannels) {
   if (rcChannels->failsafe) return;
 
-  int rawThrottle = crsf->rcToUs(crsf->getChannel(3)); // T
-  int rawRoll     = crsf->rcToUs(crsf->getChannel(1)); // A
-  int rawPitch    = crsf->rcToUs(crsf->getChannel(2)); // E
-  int rawYaw      = crsf->rcToUs(crsf->getChannel(4)); // R
-  int rawArm      = crsf->rcToUs(crsf->getChannel(5)); // Aux1
+  int rawThrottle = crsf->rcToUs(crsf->getChannel(3));
+  int rawRoll     = crsf->rcToUs(crsf->getChannel(1));
+  int rawPitch    = crsf->rcToUs(crsf->getChannel(2));
+  int rawYaw      = crsf->rcToUs(crsf->getChannel(4));
+  int rawArm      = crsf->rcToUs(crsf->getChannel(5));
 
   armed = rawArm > 1500;
 
@@ -107,14 +103,10 @@ void reset_pid() {
 }
 
 void setup() {
-  Serial.begin(115200);
-  while (!Serial);
-
   Wire.begin();
   Wire.setClock(400000);
   delay(250);
 
-  // MPU6050 setup
   Wire.beginTransmission(0x68); Wire.write(0x6B); Wire.write(0x00); Wire.endTransmission(); delay(10);
   Wire.beginTransmission(0x68); Wire.write(0x1A); Wire.write(0x03); Wire.endTransmission(); delay(10);
   Wire.beginTransmission(0x68); Wire.write(0x19); Wire.write(0x03); Wire.endTransmission(); delay(10);
@@ -142,14 +134,11 @@ void setup() {
 
   crsf = new CRSFforArduino();
   if (!crsf->begin()) {
-    Serial.println("CRSF init failed");
     while (1) delay(10);
   }
   crsf->setRcChannelsCallback(onReceiveRcChannels);
 
   LoopTimer = micros();
-
-  Serial.println("Throttle,RateRoll,DesiredRoll,OutputRoll,Pterm,Dterm,TPA,RatePitch,DesiredPitch,OutputPitch,RateYaw,DesiredYaw,OutputYaw");
 }
 
 const int TPA_BREAKPOINT = 1300;
@@ -178,11 +167,6 @@ void loop() {
   float scaledP = PRateRoll * tpa_scale;
   float scaledD = DRateRoll * tpa_scale;
 
-  debugPterm = scaledP * ErrorRateRoll;
-  debugIterm = PrevItermRateRoll + IRateRoll * (ErrorRateRoll + PrevErrorRateRoll) * TimeStep / 2;
-  debugIterm = constrain(debugIterm, -400, 400);
-  debugDterm = scaledD * (ErrorRateRoll - PrevErrorRateRoll) / TimeStep;
-
   pid_equation(ErrorRateRoll, scaledP, IRateRoll, scaledD, PrevErrorRateRoll, PrevItermRateRoll);
   OutputRoll = PIDReturn[0];
   PrevErrorRateRoll = PIDReturn[1];
@@ -193,11 +177,6 @@ void loop() {
   float scaledP_Pitch = PRatePitch * tpa_scale;
   float scaledD_Pitch = DRatePitch * tpa_scale;
 
-  debugPtermPitch = scaledP_Pitch * ErrorRatePitch;
-  debugItermPitch = PrevItermRatePitch + IRatePitch * (ErrorRatePitch + PrevErrorRatePitch) * TimeStep / 2;
-  debugItermPitch = constrain(debugItermPitch, -400, 400);
-  debugDtermPitch = scaledD_Pitch * (ErrorRatePitch - PrevErrorRatePitch) / TimeStep;
-
   pid_equation(ErrorRatePitch, scaledP_Pitch, IRatePitch, scaledD_Pitch, PrevErrorRatePitch, PrevItermRatePitch);
   OutputPitch = PIDReturn[0];
   PrevErrorRatePitch = PIDReturn[1];
@@ -207,11 +186,6 @@ void loop() {
   ErrorRateYaw = DesiredRateYaw - FilteredRateYaw;
   float scaledP_Yaw = PRateYaw * tpa_scale;
   float scaledD_Yaw = DRateYaw * tpa_scale;
-
-  debugPtermYaw = scaledP_Yaw * ErrorRateYaw;
-  debugItermYaw = PrevItermRateYaw + IRateYaw * (ErrorRateYaw + PrevErrorRateYaw) * TimeStep / 2;
-  debugItermYaw = constrain(debugItermYaw, -400, 400);
-  debugDtermYaw = scaledD_Yaw * (ErrorRateYaw - PrevErrorRateYaw) / TimeStep;
 
   pid_equation(ErrorRateYaw, scaledP_Yaw, IRateYaw, scaledD_Yaw, PrevErrorRateYaw, PrevItermRateYaw);
   OutputYaw = PIDReturn[0];
@@ -241,21 +215,6 @@ void loop() {
     reset_pid();
   }
 
-  Serial.print(throttle); Serial.print(",");
-  Serial.print(FilteredRateRoll); Serial.print(",");
-  Serial.print(DesiredRateRoll); Serial.print(",");
-  Serial.print(OutputRoll); Serial.print(",");
-  Serial.print(scaledP); Serial.print(",");
-  Serial.print(scaledD); Serial.print(",");
-  Serial.print(tpa_scale); Serial.print(",");
-  Serial.print(FilteredRatePitch); Serial.print(",");
-  Serial.print(DesiredRatePitch); Serial.print(",");
-  Serial.print(OutputPitch); Serial.print(",");
-  Serial.print(FilteredRateYaw); Serial.print(",");
-  Serial.print(DesiredRateYaw); Serial.print(",");
-  Serial.println(OutputYaw);
-
   while (micros() - LoopTimer < 4000);
   LoopTimer = micros();
 }
-
