@@ -81,7 +81,7 @@ void gyro_signals() {
 
   RateRoll  = (float)GyroX / 65.5;
   RatePitch = (float)GyroY / 65.5;
-  RateYaw   = (float)GyroZ / 65.5;
+  RateYaw   = -(float)GyroZ / 65.5;
 }
 
 void pid_equation(float Error, float P , float I, float D, float PrevError, float PrevIterm) {
