@@ -124,7 +124,7 @@ void gyro_signals() {
 void pid_equation(float Error, float P , float I, float D, float PrevError, float PrevIterm) {
   float Pterm = P * Error;
   float Iterm = PrevIterm + I * (Error + PrevError) * TimeStep / 2;
-  Iterm = constrain(Iterm, -400, 400);
+  Iterm = constrain(Iterm, -400, 400); // Limit I-term to prevent windup
   float Dterm = D * (Error - PrevError) / TimeStep;
   float PIDOutput = Pterm + Iterm + Dterm;
   PIDOutput = constrain(PIDOutput, -400, 400);
@@ -265,5 +265,4 @@ void loop() {
   while (micros() - LoopTimer < 4000);
   LoopTimer = micros();
 }
-  LoopTimer = micros();
-}
+
