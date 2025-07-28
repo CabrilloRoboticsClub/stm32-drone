@@ -2,6 +2,16 @@
 #include <Servo.h>
 #include "CRSFforArduino.hpp"
 
+/*  STM32F405 PID Controller for Drone
+  This sketch implements a basic PID controller for a drone using an STM32F405 board.
+  It reads gyro data from an MPU6050, applies PID control to adjust motor speeds,
+  and uses CRSF for RC channel input.
+
+  The PID parameters can be adjusted for tuning the drone's flight characteristics.
+  The sketch also includes a simple TPA (Throttle PID Attenuation) implementation to reduce
+  PID gains at higher throttle levels.
+*/
+
 Servo esc1, esc2, esc3, esc4;
 #define MOTOR1 5
 #define MOTOR2 6
